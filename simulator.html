@@ -1,0 +1,635 @@
+
+<!DOCTYPE html>
+
+<html>
+	
+	<head>
+		
+		<title>simulator.html</title>
+		<meta http-equiv="content-type" content="text/html; charset=ISO-8859-1">
+		<script src="initShadersES6.js"></script>
+        <script src="MVES6.js"></script>
+		
+
+    <script type="text/javascript" src="FlightSim.js"></script>
+    <script type="text/javascript" src="EventHander.js"></script>
+	<script type="text/javascript" src="helpers.js"></script>
+	<script type= "text/javascript"> src="math.js"</script>
+
+
+
+	<script id="vertex-shader-smooth" type="x-shader/x-vertex">
+		
+	#version 300 es
+
+	//CODE FOR PERLIN NOISE ATTRIBUTED TO https://gist.github.com/patriciogonzalezvivo/670c22f3966e662d2f83
+
+	#define M_PI 3.14159265358979323846
+
+	float rand(vec2 co){return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);}
+	float rand (vec2 co, float l) {return rand(vec2(rand(co), l));}
+	float rand (vec2 co, float l, float t) {return rand(vec2(rand(co, l), t));}
+
+	float perlin(vec2 p, float dim, float time) {
+	vec2 pos = floor(p * dim);
+	vec2 posx = pos + vec2(1.0, 0.0);
+	vec2 posy = pos + vec2(0.0, 1.0);
+	vec2 posxy = pos + vec2(1.0);
+	
+	float c = rand(pos, dim, time);
+	float cx = rand(posx, dim, time);
+	float cy = rand(posy, dim, time);
+	float cxy = rand(posxy, dim, time);
+	
+	vec2 d = fract(p * dim);
+	d = -0.5 * cos(d * M_PI) + 0.5;
+	
+	float ccx = mix(c, cx, d.x);
+	float cycxy = mix(cy, cxy, d.x);
+	float center = mix(ccx, cycxy, d.y);
+	
+	return center * 2.0 - 1.0;
+	
+	}
+
+	float perlin(vec2 p, float dim) {
+	
+		/*vec2 pos = floor(p * dim);
+		vec2 posx = pos + vec2(1.0, 0.0);
+		vec2 posy = pos + vec2(0.0, 1.0);
+		vec2 posxy = pos + vec2(1.0);
+	
+		// For exclusively black/white noise
+		/*float c = step(rand(pos, dim), 0.5);
+		float cx = step(rand(posx, dim), 0.5);
+		float cy = step(rand(posy, dim), 0.5);
+		float cxy = step(rand(posxy, dim), 0.5);*/
+	
+		/*float c = rand(pos, dim);
+		float cx = rand(posx, dim);
+		float cy = rand(posy, dim);
+		float cxy = rand(posxy, dim);
+	
+		vec2 d = fract(p * dim);
+		d = -0.5 * cos(d * M_PI) + 0.5;
+	
+		float ccx = mix(c, cx, d.x);
+		float cycxy = mix(cy, cxy, d.x);
+		float center = mix(ccx, cycxy, d.y);
+
+		
+		return center * 2.0 - 1.0;*/
+		return perlin(p, dim, 0.0);
+}
+
+	in vec2 vPosition;
+	uniform mat4 viewmatrix;
+	uniform mat4 projmatrix;
+	uniform float interpolate;
+	out float height;
+	out float frag_shad;
+
+	
+	vec3 ambientColor;		// Ambient reflection coefficient
+	vec3 diffuseColor;		// Diffuse reflection coefficient
+	vec3 specularColor;		// Specular reflection coefficient
+
+	float Ka;   // Ambient reflection coefficient
+	float Kd;   // Diffuse reflection coefficient
+	float Ks;   // Specular reflection coefficient
+
+	float shininessVal; // Shininess
+
+	out vec4 color;   // Output color value 
+	vec3 light_pos;  // Position of Light source
+	
+	out vec3 Normal;  // Normal of Vertex
+
+      void
+      main()
+      {
+		vec3 normal = vec3(0.0,1.0,0.0);   // if height is zero by default normal will be this <
+		vec3 v1;
+		vec3 v2;
+
+
+		Ka = 0.3;
+		Kd = 0.9;
+		Ks = 0.5;
+
+		ambientColor = vec3(1.0,1.0,1.0);		// Default ambient value
+		specularColor = vec3(1.0,1.0,1.0);		// Default Specular value
+
+		shininessVal = 50.0;
+
+		light_pos = vec3(3.0,5.0,3.0);	// Fixed Position of Light source
+
+
+		height = max(perlin( vec2( vPosition[0],vPosition[1]), 2.0) , 0.0 );
+		if (height != 0.0){
+			float dy_dx= (perlin( vec2( vPosition[0],vPosition[1]), 2.0) - perlin( vec2( vPosition[0] + 0.001,vPosition[1]), 2.0)  )/0.001;
+			float dy_dz= (perlin( vec2( vPosition[0],vPosition[1]), 2.0) - perlin( vec2( vPosition[0],vPosition[1]) +0.001, 2.0)  )/0.001 ;
+
+			v1 = vec3(1.0,dy_dx,0.0);
+			v2 = vec3(0.0,dy_dz,1.0);
+
+
+			normal = vec3 ( v1[1] * v2[2] - v1[2] * v2[1], v1[2] * v2[0] - v1[0] * v2[2],v1[0] * v2[1] - v1[1] * v2[0]);  // calculating cross product
+
+		}
+		vec3 vertPos = vec3(vPosition.x, height, vPosition.y);
+		
+		if (height <= 0.2) { diffuseColor = vec3(0.0,0.0,1.0);}   // Assigning colors according to height
+		else if (height > 0.2 && height <= 0.4)
+		
+		{
+			diffuseColor = vec3(0.0,1.0,0.0);
+		}
+
+		else if (height > 0.4 && height<= 0.5){
+			diffuseColor = vec3(1.0,0.75,0.25); }
+
+		
+		else {	diffuseColor = vec3(1.0,1.0,1.0);}
+
+
+		Normal = normal;
+		vec3 N = normalize(Normal);
+  		vec3 L = normalize(light_pos - vertPos);
+		float lambertian = max(dot(N, L), 0.0);
+		float specular = 0.0;
+
+		if(lambertian > 0.0) {
+			vec3 R = reflect(-L, N);      // Reflected light vector
+			vec3 V = normalize(-vertPos); // Vector to viewer
+			// Compute the specular term
+			float specAngle = max(dot(R, V), 0.0);
+			specular = pow(specAngle, shininessVal);
+		  }
+
+		color = vec4(Ka * ambientColor +
+				Kd * lambertian * diffuseColor +
+               Ks * specular * specularColor, 1.0);
+		
+		 
+		gl_Position = projmatrix*viewmatrix * vec4( vPosition[0] , height -2.0, vPosition[1],1) ;
+	    gl_PointSize = 2.5;
+		frag_shad = interpolate;
+
+      }
+	</script>
+
+	<script id="fragment-shader-smooth" type="x-shader/x-fragment">
+		#version 300 es
+			precision highp float;
+			
+			in vec4 color;
+			out vec4 fragColor;
+			in float height;
+			in float frag_shad;
+	
+			void
+			main()
+			{
+				fragColor = color;
+				
+			}
+		  </script>
+	  
+	  
+		</script>
+
+
+		<script id="vertex-shader-flat" type="x-shader/x-vertex">
+		
+			#version 300 es
+		
+			//CODE FOR PERLIN NOISE ATTRIBUTED TO https://gist.github.com/patriciogonzalezvivo/670c22f3966e662d2f83
+		
+			#define M_PI 3.14159265358979323846
+		
+			float rand(vec2 co){return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);}
+			float rand (vec2 co, float l) {return rand(vec2(rand(co), l));}
+			float rand (vec2 co, float l, float t) {return rand(vec2(rand(co, l), t));}
+		
+			float perlin(vec2 p, float dim, float time) {
+			vec2 pos = floor(p * dim);
+			vec2 posx = pos + vec2(1.0, 0.0);
+			vec2 posy = pos + vec2(0.0, 1.0);
+			vec2 posxy = pos + vec2(1.0);
+			
+			float c = rand(pos, dim, time);
+			float cx = rand(posx, dim, time);
+			float cy = rand(posy, dim, time);
+			float cxy = rand(posxy, dim, time);
+			
+			vec2 d = fract(p * dim);
+			d = -0.5 * cos(d * M_PI) + 0.5;
+			
+			float ccx = mix(c, cx, d.x);
+			float cycxy = mix(cy, cxy, d.x);
+			float center = mix(ccx, cycxy, d.y);
+			
+			return center * 2.0 - 1.0;
+			
+			}
+		
+			float perlin(vec2 p, float dim) {
+			
+				/*vec2 pos = floor(p * dim);
+				vec2 posx = pos + vec2(1.0, 0.0);
+				vec2 posy = pos + vec2(0.0, 1.0);
+				vec2 posxy = pos + vec2(1.0);
+			
+				// For exclusively black/white noise
+				/*float c = step(rand(pos, dim), 0.5);
+				float cx = step(rand(posx, dim), 0.5);
+				float cy = step(rand(posy, dim), 0.5);
+				float cxy = step(rand(posxy, dim), 0.5);*/
+			
+				/*float c = rand(pos, dim);
+				float cx = rand(posx, dim);
+				float cy = rand(posy, dim);
+				float cxy = rand(posxy, dim);
+			
+				vec2 d = fract(p * dim);
+				d = -0.5 * cos(d * M_PI) + 0.5;
+			
+				float ccx = mix(c, cx, d.x);
+				float cycxy = mix(cy, cxy, d.x);
+				float center = mix(ccx, cycxy, d.y);
+		
+				
+				return center * 2.0 - 1.0;*/
+				return perlin(p, dim, 0.0);
+		}
+		
+			in vec2 vPosition;
+			uniform mat4 viewmatrix;
+			uniform mat4 projmatrix;
+			uniform float interpolate;
+			out float height;
+			out float frag_shad;
+		
+			
+			
+			  void
+			  main()
+			  {
+		
+		
+				height = max(perlin( vec2( vPosition[0],vPosition[1]), 2.0) , 0.0 );
+				 
+				gl_Position = projmatrix*viewmatrix * vec4( vPosition[0] , height -2.0, vPosition[1],1) ;
+				gl_PointSize = 2.5;
+				frag_shad = interpolate;
+		
+			  }
+			</script>
+		
+			<script id="fragment-shader-flat" type="x-shader/x-fragment">
+				#version 300 es
+					precision highp float;
+					
+					out vec4 fragColor;
+					in float frag_shad;
+					in float height;
+			
+					void
+					main()
+					{
+						
+						float inter =  (height) / (frag_shad) ;
+
+						vec4 color_value ;
+					
+						if( height< 0.2){
+							color_value =   vec4(0.0,0.0,1.0,1.0);}
+
+						
+						else if( height> 0.2 && height < 0.6 ){
+							color_value =  (1.0 - inter) * (0.0,0.0,1.0,1.0)+  inter* vec4(0.0,0.75,0.25,1.0);
+						}
+
+						else{
+							color_value =   inter* vec4(1.0,1.0,1.0,1.0);}
+
+						
+
+						
+						fragColor = color_value;
+						
+					}
+				  </script>
+			  
+			  
+				</script>
+
+
+
+	<script id="vertex-shader-phong" type="x-shader/x-vertex">
+		
+		#version 300 es
+	
+		//CODE FOR PERLIN NOISE ATTRIBUTED TO https://gist.github.com/patriciogonzalezvivo/670c22f3966e662d2f83
+	
+		#define M_PI 3.14159265358979323846
+	
+		float rand(vec2 co){return fract(sin(dot(co.xy ,vec2(12.9898,78.233))) * 43758.5453);}
+		float rand (vec2 co, float l) {return rand(vec2(rand(co), l));}
+		float rand (vec2 co, float l, float t) {return rand(vec2(rand(co, l), t));}
+	
+		float perlin(vec2 p, float dim, float time) {
+		vec2 pos = floor(p * dim);
+		vec2 posx = pos + vec2(1.0, 0.0);
+		vec2 posy = pos + vec2(0.0, 1.0);
+		vec2 posxy = pos + vec2(1.0);
+		
+		float c = rand(pos, dim, time);
+		float cx = rand(posx, dim, time);
+		float cy = rand(posy, dim, time);
+		float cxy = rand(posxy, dim, time);
+		
+		vec2 d = fract(p * dim);
+		d = -0.5 * cos(d * M_PI) + 0.5;
+		
+		float ccx = mix(c, cx, d.x);
+		float cycxy = mix(cy, cxy, d.x);
+		float center = mix(ccx, cycxy, d.y);
+		
+		return center * 2.0 - 1.0;
+		
+		}
+	
+		float perlin(vec2 p, float dim) {
+		
+			/*vec2 pos = floor(p * dim);
+			vec2 posx = pos + vec2(1.0, 0.0);
+			vec2 posy = pos + vec2(0.0, 1.0);
+			vec2 posxy = pos + vec2(1.0);
+		
+			// For exclusively black/white noise
+			/*float c = step(rand(pos, dim), 0.5);
+			float cx = step(rand(posx, dim), 0.5);
+			float cy = step(rand(posy, dim), 0.5);
+			float cxy = step(rand(posxy, dim), 0.5);*/
+		
+			/*float c = rand(pos, dim);
+			float cx = rand(posx, dim);
+			float cy = rand(posy, dim);
+			float cxy = rand(posxy, dim);
+		
+			vec2 d = fract(p * dim);
+			d = -0.5 * cos(d * M_PI) + 0.5;
+		
+			float ccx = mix(c, cx, d.x);
+			float cycxy = mix(cy, cxy, d.x);
+			float center = mix(ccx, cycxy, d.y);
+	
+			
+			return center * 2.0 - 1.0;*/
+			return perlin(p, dim, 0.0);
+	}
+	
+		in vec2 vPosition;
+
+
+
+		uniform mat4 viewmatrix;
+		out float height;
+		uniform float interpolate;
+		out float frag_shad;
+		uniform mat4 projmatrix;
+	
+		
+		
+		out vec3 V_POS;
+		out vec3 Normal;
+	
+		  void
+		  main()
+		  {
+			vec3 normal = vec3(0.0,1.0,0.0);			// if height is zero by default normal will be this <
+			vec3 v1;
+			vec3 v2;
+	
+
+	
+			height = max(perlin( vec2( vPosition[0],vPosition[1]), 2.0) , 0.0 );	// calculating height through perlin noise using x and z
+			if (height != 0.0){
+				float dy_dx= (perlin( vec2( vPosition[0],vPosition[1]), 2.0) - perlin( vec2( vPosition[0] + 0.001,vPosition[1]), 2.0)  )/0.001;
+				float dy_dz= (perlin( vec2( vPosition[0],vPosition[1]), 2.0) - perlin( vec2( vPosition[0],vPosition[1]) +0.001, 2.0)  )/0.001 ;
+	
+				v1 = vec3(1.0,dy_dx,0.0);
+				v2 = vec3(0.0,dy_dz,1.0);
+	
+				normal = vec3 ( v1[1] * v2[2] - v1[2] * v2[1], v1[2] * v2[0] - v1[0] * v2[2],v1[0] * v2[1] - v1[1] * v2[0]);   // calculating Cross product 
+				
+			}
+			V_POS = vec3(vPosition.x, height, vPosition.y);
+			
+			
+			Normal = normal;
+
+			gl_Position = projmatrix*viewmatrix * vec4( vPosition[0] , height -2.0, vPosition[1],1) ;
+			gl_PointSize = 2.5;
+			frag_shad = interpolate;
+	
+		  }
+		</script>
+
+
+	<script id="fragment-shader-phong" type="x-shader/x-fragment">
+		#version 300 es
+			precision highp float;
+			
+			out vec4 fragColor;
+			in float height;
+			in float frag_shad;
+
+			vec3 ambientColor;
+			vec3 diffuseColor;
+			vec3 specularColor;
+		
+			float Ka;   // Ambient reflection coefficient
+			float Kd;   // Diffuse reflection coefficient
+			float Ks;   // Specular reflection coefficient
+			float shininessVal; // Shininess
+			vec4  color;
+			vec3 light_pos; // Position of Light source
+
+			in vec3 Normal;		// Getting Normal Vector from vertex-shader-phong
+
+			in vec3 V_POS;	// Vertex Position from vertex-shader-phong
+
+
+	
+			void
+			main()
+			{	
+
+				Ka = 0.3;  // Ambient reflection coefficient
+				Kd = 0.9;	// Diffuse reflection coefficient
+				Ks = 0.5;	// Specular reflection coefficient
+
+				ambientColor = vec3(1.0,1.0,1.0);
+				specularColor = vec3(1.0,1.0,1.0);
+
+				shininessVal = 50.0;	// Shininess
+
+				light_pos = vec3(1.0,2.0,3.0);	// Fixed Position of Light source
+
+
+				
+				if (V_POS[1] <= 0.2) { diffuseColor = vec3(0.0,0.0,1.0);}		// Assigning colors according to height
+				else if (V_POS[1] > 0.2 && V_POS[1] <= 0.4){
+					diffuseColor = vec3(0.0,1.0,0.0);
+				}
+				else if (V_POS[1] > 0.4 && V_POS[1] <= 0.7){
+					diffuseColor = vec3(1.0,0.75,0.25); }
+
+				else {	diffuseColor = vec3(1.0,1.0,1.0);}
+				
+
+				vec3 N = normalize(Normal);   // Normalizing the normal 
+				vec3 L = normalize(light_pos - V_POS);
+				float lambertian = max(dot(N, L), 0.0);
+				float specular = 0.0;
+				if(lambertian > 0.0) {
+					vec3 R = reflect(-L, N);      // Reflected light vector
+					vec3 V = normalize(-V_POS); 	// Vector to viewer
+					
+					// Compute the specular term
+					float specAngle = max(dot(R, V), 0.0);
+					specular = pow(specAngle, shininessVal);}
+
+				color = vec4(Ka * ambientColor +
+						Kd * lambertian * diffuseColor +
+					Ks * specular * specularColor, 1.0);
+
+
+
+
+				fragColor = color;
+			
+				
+			}
+		  </script>
+	  
+	  
+		</script>
+		<style>
+
+			aside {
+
+			  width: 30%;
+
+			  padding-left: 15px;
+
+			  margin-left: 15px;
+
+			  float: right;
+
+			  font-style: italic;
+
+			  background-color: lightgray;
+
+			}
+
+</style>
+
+
+<style>
+	div {
+	  background-color: lightgrey;
+	}
+  </style>
+	
+	<style>
+	body {
+		background-image: url('terrain2.png'); 
+		color: black;
+	}
+	</style>
+
+	</head> <h1 style="background-color: aliceblue;">Flight Simulator 2021</h1>
+	<body>
+
+        <canvas id="gl-canvas" width="512" height="512">
+            Oops ... your browser doesn't support the HTML5 canvas element
+        </canvas>
+		<div style="color: black; font-family: 'Courier New', Courier, monospace; position: absolute; top: 400px; left: 600px; font-size:x-small;">
+
+		<label> Flat Shader Interpolater</label>
+		<input type="range" min="0.1" max="1" value="0.8" class="slider" step="0.001" id="myRange">  
+		</div>
+
+		<div style="color: black; font-family: 'Courier New', Courier, monospace; position: absolute; top: 80px; left: 10px; font-size:x-small;">
+		<p id="Eye_Vector">Eye Vector</p>
+		<p id="Look_At_Vector"> Look At Vector</p> 
+		<p id="Speed">Speed</p>
+		<p id="Render_Mode">Render Mode</p>
+		<p id="Shading_Mode">Shading Mode</p>
+		</div>
+
+		<div style= "color: rgb(0, 0, 0); font-family: 'Courier New', Courier, monospace; position: absolute; top: 180px; left: 600px; font-size:x-small;">
+			<h1>Extras</h1>
+			<h4 >Implemented Perlin Noise for smoothing</h4>
+			<h4 >Interpolater for flat shading </h4>
+			<h4 >New Terrain is generated based on Time via Distance/Speed </h4>
+			<h4 >Airplane Dashboard Implemented which shows Speed etc</h4>
+			<h4 >Real time shading as done on GPU </h4>
+			
+			
+			</div>
+
+		<div Style= "color: rgb(0, 0, 0); font-family: 'Courier New', Courier, monospace; position: absolute; top: 80px; left: 1000px; font-size:x-small; ">
+
+			<h1 class="card-subheading">Instructions:</h1>
+
+			<h2 class="card-heading">To alter the bounds of the view:</h2>
+
+			<p>Use 1 and Shift+1 to vary left.</p>
+
+			<p>Use 2 and Shift+2 to vary right.</p>
+
+			<p>Use 3 and Shift+3 to vary top.</p>
+
+			<p>Use 4 and Shift+4 to vary bottom.</p>
+
+			<p>Use 5 and Shift+5 to vary near.</p>
+
+			<p>Use 6 and Shift+6 to vary far.</p>
+
+			<h2 class="card-heading">To enable shading:</h2>
+
+			<p>Use V to toggle view.</p>
+
+			<p>Use C to toggle coloring scheme.</p>
+
+			<h2 class="card-heading">For speed:</h2>
+
+			<p>Use Up arrow key to increase.</p>
+
+			<p>Use Down arrow key to decrease.</p>
+
+			<h2 class="card-heading">To rotate:</h2>
+
+			<p>Use W, S/w, s for pitch.</p>
+
+			<p>Use A, D/a, d for yaw.</p>
+
+			<p>Use Q, E/q, e for roll.</p>
+
+			<h3>Press the Esc key to quit simulator.</h3>
+			
+			<h3>Input slider controls interpolation in Flat shading mode</h3>
+
+
+
+
+		</div>
+		
+				
+	</body>
+</html>
